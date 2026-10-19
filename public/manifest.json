@@ -1,0 +1,16 @@
+{
+  "name": "Ակադեմիական Դասացուցակի Համակարգ",
+  "short_name": "Դասացուցակ",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#1e3a8a",
+  "description": "Համալսարանի ֆակուլտետների ինտերակտիվ դասացուցակի կառավարման համակարգ",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml"
+    }
+  ]
+}
