@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { EditCellModal } from './edit-cell-modal';
 
 const DAYS = [
@@ -9,7 +9,7 @@ const DAYS = [
   { id: 'friday', label: 'Ուրբաթ' }
 ];
 
-const STREAMS = [
+const DEFAULT_STREAMS = [
   { id: 'stream-1', label: '1-ին հոսք' },
   { id: 'stream-2', label: '2-րդ հոսք' },
   { id: 'stream-3', label: '3-րդ հոսք' },
@@ -19,6 +19,7 @@ const STREAMS = [
 interface ScheduleTableProps {
   facultyName?: string;
   selectedYear?: string;
+  selectedDepartment?: string;
   scheduleData?: any;
   onUpdateCell: (cellId: string, data: any) => void;
   isAdmin?: boolean;
@@ -41,6 +42,7 @@ interface ScheduleTableProps {
 export const ScheduleTable = ({
   facultyName = '',
   selectedYear = '1-ին կուրս',
+  selectedDepartment = '',
   scheduleData = {},
   onUpdateCell,
   isAdmin = true,
@@ -62,7 +64,67 @@ export const ScheduleTable = ({
     isCellAlreadySplit: boolean;
   } | null>(null);
 
-  const [activeMobileStream, setActiveMobileStream] = useState<string>('stream-1');
+  const [editingStream, setEditingStream] = useState<{ id: string; name: string } | null>(null);
+  const [streamNames, setStreamNames] = useState<Record<string, string>>({});
+
+  const storageKey = `asue_streams_${facultyName}_${selectedDepartment}_${selectedYear}`;
+
+  useEffect(() => {
+    const saved = localStorage.getItem(storageKey);
+    if (saved) {
+      try {
+        setStreamNames(JSON.parse(saved));
+      } catch {
+        setStreamNames({});
+      }
+    } else {
+      setStreamNames({});
+    }
+  }, [storageKey]);
+
+  const handleSaveStreamName = () => {
+    if (!editingStream) return;
+    const updated = { ...streamNames, [editingStream.id]: editingStream.name.trim() };
+    setStreamNames(updated);
+    localStorage.setItem(storageKey, JSON.stringify(updated));
+    setEditingStream(null);
+  };
+
+  const getStreamLabel = (streamId: string, defaultLabel: string) => {
+    return streamNames[streamId] || defaultLabel;
+  };
+
+  // Calcolo opzioni ammesse: l'ultima ora calcolata NON deve mai superare il 18
+  const slotsCount = timeSlots.length || 4;
+  const maxAllowableEndForFirstSlot = 18 - (slotsCount - 1) * 2; // Per 4 slot: 18 - 6 = 12 (max 11-12)
+
+  const allowedStartOptions: string[] = [];
+  for (let end = 2; end <= maxAllowableEndForFirstSlot; end += 2) {
+    allowedStartOptions.push(`${end - 1}-${end}`);
+  }
+
+  // Aggiornamento a catena con blocco rigoroso al valore 17-18
+  const handleFirstSlotChange = (selectedSlot: string) => {
+    if (!selectedSlot || !onUpdateTimeSlot) return;
+
+    const match = selectedSlot.match(/^(\d+)-(\d+)$/);
+    if (!match) return;
+
+    const startNum = parseInt(match[1], 10);
+    const endNum = parseInt(match[2], 10);
+
+    timeSlots.forEach((_, idx) => {
+      const calculatedStart = startNum + idx * 2;
+      const calculatedEnd = endNum + idx * 2;
+
+      // Protezione: blocca a 17-18 e non genera mai numeri superiori
+      if (calculatedEnd <= 18) {
+        onUpdateTimeSlot(idx, `${calculatedStart}-${calculatedEnd}`);
+      } else {
+        onUpdateTimeSlot(idx, '17-18');
+      }
+    });
+  };
 
   const openFieldModal = (
     cellId: string,
@@ -228,7 +290,7 @@ export const ScheduleTable = ({
         <colgroup>
           <col className="w-10" />
           <col className="w-20" />
-          {STREAMS.map((s) => (
+          {DEFAULT_STREAMS.map((s) => (
             <React.Fragment key={s.id}>
               <col className="w-[160px]" />
               <col className="w-[140px]" />
@@ -241,38 +303,55 @@ export const ScheduleTable = ({
           <tr className={`h-10 border-b-2 border-slate-700 print:bg-gray-200 ${isDarkMode ? 'bg-slate-800 text-slate-200' : 'bg-slate-100 text-slate-800'}`}>
             <th className="border-r-2 border-slate-600 p-2 font-bold text-xs" rowSpan={2}>Օր</th>
             <th className="border-r-2 border-slate-600 p-2 font-bold text-xs" rowSpan={2}>
-              Ժամ {isSuperAdmin && <span className="text-amber-500 text-[10px] block font-normal print:hidden">(Խմբագրելի)</span>}
+              Ժամ {(isAdmin || isSuperAdmin) && <span className="text-amber-500 text-[10px] block font-normal print:hidden">(Խմբագրելի)</span>}
             </th>
-            {STREAMS.map((stream, idx) => (
-              <th
-                key={stream.id}
-                colSpan={3}
-                className={`p-2 text-xs font-bold ${isDarkMode ? 'bg-slate-750 text-slate-100' : 'bg-slate-200 text-slate-900'} ${
-                  idx < STREAMS.length - 1 ? 'border-r-2 border-r-slate-600' : ''
-                }`}
-              >
-                {stream.label}
-              </th>
-            ))}
+            {DEFAULT_STREAMS.map((stream, idx) => {
+              const label = getStreamLabel(stream.id, stream.label);
+              return (
+                <th
+                  key={stream.id}
+                  colSpan={3}
+                  className={`p-2 text-xs font-bold ${isDarkMode ? 'bg-slate-750 text-slate-100' : 'bg-slate-200 text-slate-900'} ${
+                    idx < DEFAULT_STREAMS.length - 1 ? 'border-r-2 border-r-slate-600' : ''
+                  }`}
+                >
+                  <div className="flex items-center justify-center gap-1.5">
+                    <span>{label}</span>
+                    {(isAdmin || isSuperAdmin) && (
+                      <button
+                        onClick={() => setEditingStream({ id: stream.id, name: label })}
+                        className="cursor-pointer opacity-40 hover:opacity-100 text-xs p-1 hover:bg-slate-300 dark:hover:bg-slate-600 rounded transition-all print:hidden"
+                        title="Փոխել հոսքի անվանումը"
+                      >
+                        ✏️
+                      </button>
+                    )}
+                  </div>
+                </th>
+              );
+            })}
           </tr>
 
           <tr className={`text-[11px] font-semibold h-8 border-b-2 border-slate-700 ${isDarkMode ? 'bg-slate-800/80 text-slate-400' : 'bg-slate-50 text-slate-600'}`}>
-            {STREAMS.map((stream, streamIdx) => (
+            {DEFAULT_STREAMS.map((stream, streamIdx) => (
               <React.Fragment key={`${stream.id}-sub`}>
                 <th className={`border-r px-1 py-1 font-medium truncate ${isDarkMode ? 'border-slate-700' : 'border-gray-300'}`}>Դասընթաց</th>
                 <th className={`border-r px-1 py-1 font-medium truncate ${isDarkMode ? 'border-slate-700' : 'border-gray-300'}`}>Դասախոս</th>
-                <th className={`px-1 py-1 font-medium truncate ${streamIdx < STREAMS.length - 1 ? 'border-r-2 border-r-slate-600' : ''}`}>Լսարան</th>
+                <th className={`px-1 py-1 font-medium truncate ${streamIdx < DEFAULT_STREAMS.length - 1 ? 'border-r-2 border-r-slate-600' : ''}`}>Լսարան</th>
               </React.Fragment>
             ))}
           </tr>
         </thead>
 
         <tbody>
-          {DAYS.map((day) => (
+          {DAYS.map((day, dayIndex) => (
             <React.Fragment key={day.id}>
               {timeSlots.map((time, timeIndex) => {
                 const isLastSlotOfDay = timeIndex === timeSlots.length - 1;
                 const bottomBorderClass = isLastSlotOfDay ? 'border-b-2 border-b-slate-700' : isDarkMode ? 'border-b border-slate-750' : 'border-b border-gray-200';
+
+                // Solo la prima riga ha il selettore
+                const isMasterSlotSelector = (isAdmin || isSuperAdmin) && dayIndex === 0 && timeIndex === 0;
 
                 return (
                   <tr key={`${day.id}-${time}`} className={`min-h-[58px] transition-colors ${bottomBorderClass} ${isDarkMode ? 'hover:bg-slate-800/60' : 'hover:bg-blue-50/25'}`}>
@@ -288,29 +367,38 @@ export const ScheduleTable = ({
                       </td>
                     )}
 
-                    <td className={`border-r-2 border-r-slate-600 p-1 text-xs font-mono font-bold whitespace-nowrap ${isDarkMode ? 'bg-slate-800/50 text-slate-300' : 'bg-slate-50 text-slate-700'}`}>
-                      {isSuperAdmin ? (
-                        <input
-                          type="text"
-                          value={time}
-                          onChange={(e) => onUpdateTimeSlot && onUpdateTimeSlot(timeIndex, e.target.value)}
-                          className="w-full text-center bg-amber-50 dark:bg-amber-950/60 hover:bg-amber-100 focus:bg-white focus:text-gray-900 rounded px-1 py-0.5 border border-amber-300 text-xs font-mono font-bold"
-                        />
+                    <td className={`border-r-2 border-slate-600 p-1 text-xs font-mono font-bold whitespace-nowrap ${isDarkMode ? 'bg-slate-800/50 text-slate-300' : 'bg-slate-50 text-slate-700'}`}>
+                      {isMasterSlotSelector ? (
+                        <select
+                          value={allowedStartOptions.includes(time) ? time : allowedStartOptions[0]}
+                          onChange={(e) => handleFirstSlotChange(e.target.value)}
+                          className="w-full text-center bg-amber-50 dark:bg-amber-950/60 hover:bg-amber-100 focus:bg-white focus:text-gray-900 rounded px-1 py-1 border border-amber-300 text-xs font-mono font-bold outline-none cursor-pointer appearance-none shadow-xs"
+                          title="Ընտրեք առաջին դասաժամը (մաքսիմում մինչև 11-12)"
+                        >
+                          {/* Se il valore attuale è fuori limite (es. 17-18 vecchio), lo mostriamo come avviso prima del reset */}
+                          {!allowedStartOptions.includes(time) && (
+                            <option value={time} disabled>{time} (Անվավեր)</option>
+                          )}
+                          {allowedStartOptions.map((opt) => (
+                            <option key={opt} value={opt}>{opt}</option>
+                          ))}
+                        </select>
                       ) : (
-                        time
+                        <span className="block text-center py-1">{time}</span>
                       )}
                     </td>
 
-                    {STREAMS.map((stream, streamIdx) => {
+                    {DEFAULT_STREAMS.map((stream, streamIdx) => {
                       const cellId = `${day.id}-${time}-${stream.id}`;
                       const data = scheduleData[cellId] || { course: '', prof: '', room: '' };
-                      const isLastStream = streamIdx === STREAMS.length - 1;
+                      const isLastStream = streamIdx === DEFAULT_STREAMS.length - 1;
                       const isNew = isRecentlyModified(data);
+                      const currentStreamLabel = getStreamLabel(stream.id, stream.label);
 
                       return (
                         <React.Fragment key={cellId}>
                           <td
-                            onClick={() => openFieldModal(cellId, 'course', data.course, day.id, day.label, time, stream.id, stream.label)}
+                            onClick={() => openFieldModal(cellId, 'course', data.course, day.id, day.label, time, stream.id, currentStreamLabel)}
                             className={`border-r px-1.5 py-1 align-middle transition-colors overflow-hidden ${
                               isDarkMode ? 'border-slate-700 hover:bg-blue-900/20' : 'border-gray-200 hover:bg-blue-50'
                             } ${(isAdmin || isSuperAdmin) ? 'cursor-pointer' : ''}`}
@@ -319,7 +407,7 @@ export const ScheduleTable = ({
                           </td>
 
                           <td
-                            onClick={() => openFieldModal(cellId, 'prof', data.prof, day.id, day.label, time, stream.id, stream.label)}
+                            onClick={() => openFieldModal(cellId, 'prof', data.prof, day.id, day.label, time, stream.id, currentStreamLabel)}
                             className={`border-r px-1.5 py-1 align-middle transition-colors overflow-hidden ${
                               isDarkMode ? 'border-slate-700 hover:bg-blue-900/20' : 'border-gray-200 hover:bg-blue-50'
                             } ${(isAdmin || isSuperAdmin) ? 'cursor-pointer' : ''}`}
@@ -328,7 +416,7 @@ export const ScheduleTable = ({
                           </td>
 
                           <td
-                            onClick={() => openFieldModal(cellId, 'room', data.room, day.id, day.label, time, stream.id, stream.label)}
+                            onClick={() => openFieldModal(cellId, 'room', data.room, day.id, day.label, time, stream.id, currentStreamLabel)}
                             className={`p-1 text-xs font-bold align-middle transition-colors ${
                               !isLastStream ? 'border-r-2 border-r-slate-600' : ''
                             } ${isDarkMode ? 'hover:bg-blue-900/20' : 'hover:bg-blue-50'} ${(isAdmin || isSuperAdmin) ? 'cursor-pointer' : ''}`}
@@ -345,6 +433,43 @@ export const ScheduleTable = ({
           ))}
         </tbody>
       </table>
+
+      {/* POPUP MODIFICA NOME FLUSSO */}
+      {editingStream && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4" onClick={() => setEditingStream(null)}>
+          <div className={`w-full max-w-sm rounded-2xl p-6 shadow-2xl border ${isDarkMode ? 'bg-slate-850 border-slate-700 text-slate-100' : 'bg-white border-gray-200 text-gray-800'}`} onClick={(e) => e.stopPropagation()}>
+            <h3 className="font-bold text-base mb-3 flex items-center gap-2">
+              <span>✏️</span> Փոխել հոսքի անվանումը
+            </h3>
+            <p className="text-xs opacity-70 mb-4 leading-relaxed">
+              Մուտքագրեք հոսքի նոր անվանումը:
+            </p>
+            <input
+              type="text"
+              value={editingStream.name}
+              onChange={(e) => setEditingStream({ ...editingStream, name: e.target.value })}
+              className={`w-full p-2.5 rounded-lg border font-bold text-sm mb-5 outline-none focus:ring-2 focus:ring-blue-500 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-100' : 'bg-slate-50 border-gray-300'}`}
+              autoFocus
+            />
+            <div className="flex justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setEditingStream(null)}
+                className="px-4 py-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+              >
+                Չեղարկել (Annulla)
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveStreamName}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer shadow-sm"
+              >
+                Պահպանել (Salva)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {modalState && (
         <EditCellModal

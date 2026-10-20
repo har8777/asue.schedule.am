@@ -52,3 +52,23 @@ dialog::backdrop {
   background-color: rgba(15, 23, 42, 0.6);
   backdrop-filter: blur(4px);
 }
+
+/* Stili specifici per l'esportazione PDF */
+@media print {
+  body.pdf-export-mode {
+    background-color: white !important;
+  }
+  body.pdf-export-mode .print\:hidden {
+    display: none !important;
+  }
+  body.pdf-export-mode #schedule-table-container {
+    padding: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    margin: 0 !important;
+  }
+  @page {
+    size: A4 landscape;
+    margin: 1cm;
+  }
+}

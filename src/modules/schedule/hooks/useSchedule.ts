@@ -209,9 +209,11 @@ export function useSchedule() {
   };
 
   const updateTimeSlot = (index: number, newTime: string) => {
-    const updated = [...timeSlots];
-    updated[index] = newTime;
-    setTimeSlots(updated);
+    setTimeSlots((prev) => {
+      const updated = [...prev];
+      updated[index] = newTime;
+      return updated;
+    });
   };
 
   const getRoomStatuses = useCallback(
